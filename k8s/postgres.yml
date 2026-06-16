@@ -10,6 +10,7 @@ stringData:
   POSTGRES_DB: predictions
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
+  PGDATA: /var/lib/postgresql/data/pgdata
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -87,6 +87,18 @@ jobs:
         run: |
           az aks get-credentials --resource-group "$AZURE_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --overwrite-existing
 
+      - name: Configure cluster image pull secret
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PAT || github.token }}
+        run: |
+          kubectl create namespace customer-ml --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n customer-ml create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username="$GHCR_USERNAME" \
+            --docker-password="$GHCR_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Redeploy API with rolling update
         run: |
           sed -i "s#ghcr.io/OWNER/REPO#${IMAGE_PREFIX}#g" k8s/*.yml
