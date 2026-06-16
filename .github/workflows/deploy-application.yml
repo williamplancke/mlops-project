@@ -2,7 +2,7 @@ name: Build and deploy application services
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "api/**"
       - "docker-compose.yml"

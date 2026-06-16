@@ -2,7 +2,7 @@ name: Train model in Azure ML and redeploy API
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "training/**"
       - "train_V2_cleaned.csv"
