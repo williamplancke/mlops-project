@@ -1,0 +1,9 @@
+.git
+.github
+.ipynb_checkpoints
+__pycache__
+*.pyc
+*.sqlite
+*.db
+azureml-artifacts
+downloaded-model

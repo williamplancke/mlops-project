@@ -1,0 +1,12 @@
+name: customer-value-training
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - pandas==2.2.3
+      - numpy==2.2.1
+      - scikit-learn==1.6.0
+      - imbalanced-learn==0.13.0
+      - joblib==1.4.2

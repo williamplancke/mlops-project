@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Customer Value Predictor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel input-panel">
+        <div class="title-row">
+          <div>
+            <p class="eyebrow">MLOps deployment</p>
+            <h1>Customer Value Predictor</h1>
+          </div>
+          <span id="apiStatus" class="status">Checking API</span>
+        </div>
+
+        <form id="predictionForm">
+          <div class="grid">
+            <label>
+              Income
+              <input name="income_am" type="number" step="1" value="250" />
+            </label>
+            <label>
+              Current profit
+              <input name="profit_am" type="number" step="1" value="1800" />
+            </label>
+            <label>
+              Previous damage
+              <input name="damage_am" type="number" step="1" value="0" />
+            </label>
+            <label>
+              Claims
+              <input name="claims_no" type="number" step="1" value="0" />
+            </label>
+            <label>
+              Nights booked
+              <input name="nights_booked" type="number" step="1" value="8" />
+            </label>
+            <label>
+              Age
+              <input name="age" type="number" step="1" value="38" />
+            </label>
+            <label>
+              Tenure months
+              <input name="tenure_mts" type="number" step="1" value="120" />
+            </label>
+            <label>
+              Client segment
+              <input name="client_segment" type="number" step="1" value="1" />
+            </label>
+          </div>
+
+          <details>
+            <summary>Advanced JSON features</summary>
+            <textarea id="advancedJson" spellcheck="false">{}</textarea>
+          </details>
+
+          <div class="actions">
+            <button type="submit">Predict</button>
+            <button id="loadDefaults" type="button" class="secondary">Load defaults</button>
+          </div>
+          <p id="formError" class="error" role="alert"></p>
+        </form>
+      </section>
+
+      <section class="panel results-panel">
+        <h2>Prediction</h2>
+        <div class="result-grid">
+          <article>
+            <span>Expected net profit</span>
+            <strong id="netProfit">-</strong>
+          </article>
+          <article>
+            <span>Predicted profit</span>
+            <strong id="profit">-</strong>
+          </article>
+          <article>
+            <span>Damage probability</span>
+            <strong id="damageProbability">-</strong>
+          </article>
+          <article>
+            <span>Expected damage</span>
+            <strong id="expectedDamage">-</strong>
+          </article>
+        </div>
+        <div id="incidentBadge" class="incident neutral">No prediction yet</div>
+        <pre id="rawResponse">{}</pre>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

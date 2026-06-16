@@ -1,0 +1,99 @@
+name: Build and deploy application services
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "frontend/**"
+      - "nginx/**"
+      - "k8s/**"
+      - ".github/workflows/deploy-application.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_WORKSPACE: ${{ secrets.AZURE_WORKSPACE }}
+  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Restore latest registered model for API image
+        run: |
+          az extension add --name ml --upgrade
+          rm -rf models
+          mkdir -p models
+          az ml model download --name customer-value-model --download-path downloaded-model --resource-group "$AZURE_RESOURCE_GROUP" --workspace-name "$AZURE_WORKSPACE"
+          find downloaded-model -name "*.joblib" -exec cp {} models/ \;
+          find downloaded-model -name "model_metadata.json" -exec cp {} models/ \;
+
+      - name: Set image names
+        run: |
+          echo "IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/customer-api:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/customer-api:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/customer-frontend:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/customer-frontend:latest
+
+      - name: Build and push NGINX reverse proxy image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: nginx/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/customer-nginx:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/customer-nginx:latest
+
+      - name: Connect kubectl to AKS
+        run: |
+          az aks get-credentials --resource-group "$AZURE_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --overwrite-existing
+
+      - name: Apply manifests and roll deployments
+        run: |
+          sed -i "s#ghcr.io/OWNER/REPO#${IMAGE_PREFIX}#g" k8s/*.yml
+          kubectl apply -k k8s
+          kubectl -n customer-ml set image deployment/customer-api api="${IMAGE_PREFIX}/customer-api:${IMAGE_TAG}"
+          kubectl -n customer-ml set image deployment/customer-frontend frontend="${IMAGE_PREFIX}/customer-frontend:${IMAGE_TAG}"
+          kubectl -n customer-ml set image deployment/customer-nginx nginx="${IMAGE_PREFIX}/customer-nginx:${IMAGE_TAG}"
+          kubectl -n customer-ml rollout status deployment/customer-api --timeout=180s
+          kubectl -n customer-ml rollout status deployment/customer-frontend --timeout=180s
+          kubectl -n customer-ml rollout status deployment/customer-nginx --timeout=180s
