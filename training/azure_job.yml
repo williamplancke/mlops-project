@@ -10,7 +10,7 @@ command: >-
   --quick
 environment:
   image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04
-  conda_file: training/conda.yml
+  conda_file: conda.yml
 compute: azureml:cpu-cluster
 outputs:
   model_output:
