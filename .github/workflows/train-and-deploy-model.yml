@@ -37,7 +37,7 @@ jobs:
       - name: Configure Azure ML workspace
         run: |
           az extension add --name ml --upgrade
-          az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION"
+          az group show --name "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1 || az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION"
           az ml workspace create --name "$AZURE_WORKSPACE" --resource-group "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION"
           az ml compute create --name cpu-cluster --type amlcompute --min-instances 0 --max-instances 1 --size Standard_DS3_v2 --resource-group "$AZURE_RESOURCE_GROUP" --workspace-name "$AZURE_WORKSPACE" || true
 
