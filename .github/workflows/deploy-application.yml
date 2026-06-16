@@ -43,9 +43,18 @@ jobs:
           az extension add --name ml --upgrade
           rm -rf models
           mkdir -p models
-          az ml model download --name customer-value-model --download-path downloaded-model --resource-group "$AZURE_RESOURCE_GROUP" --workspace-name "$AZURE_WORKSPACE"
+          MODEL_VERSION=$(az ml model list --name customer-value-model --resource-group "$AZURE_RESOURCE_GROUP" --workspace-name "$AZURE_WORKSPACE" --query "max_by([], &to_number(version)).version" -o tsv)
+          if [ -z "$MODEL_VERSION" ]; then
+            echo "No registered Azure ML model named customer-value-model was found. Run the training workflow first."
+            exit 1
+          fi
+          az ml model download --name customer-value-model --version "$MODEL_VERSION" --download-path downloaded-model --resource-group "$AZURE_RESOURCE_GROUP" --workspace-name "$AZURE_WORKSPACE"
           find downloaded-model -name "*.joblib" -exec cp {} models/ \;
           find downloaded-model -name "model_metadata.json" -exec cp {} models/ \;
+          test -f models/profit_model.joblib
+          test -f models/damage_incidence_model.joblib
+          test -f models/damage_amount_model.joblib
+          test -f models/model_metadata.json
 
       - name: Set image names
         run: |
