@@ -68,13 +68,15 @@ Two GitHub Actions workflows automate the required lifecycle:
 
 Required GitHub secrets:
 
-- `AZURE_CREDENTIALS`: JSON credentials for `azure/login`.
+- `AZURE_CLIENT_ID`: Azure service principal or managed identity client ID.
+- `AZURE_TENANT_ID`: Azure tenant ID.
+- `AZURE_SUBSCRIPTION_ID`: Azure subscription ID.
 - `AZURE_RESOURCE_GROUP`: Azure resource group name.
 - `AZURE_LOCATION`: Azure region, for example `westeurope`.
 - `AZURE_WORKSPACE`: Azure ML workspace name.
 - `AKS_CLUSTER_NAME`: AKS cluster name.
 
-GitHub Container Registry uses the built-in `GITHUB_TOKEN`.
+The workflows use Azure Login with OIDC, so the Azure identity must have a federated credential for this GitHub repository and branch. GitHub Container Registry uses the built-in `GITHUB_TOKEN`.
 
 ## Local Verification
 
