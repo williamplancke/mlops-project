@@ -74,14 +74,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push API image with new model
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: api/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/customer-api:${{ env.IMAGE_TAG }}
-            ${{ env.IMAGE_PREFIX }}/customer-api:latest
+        run: |
+          docker compose build api
+          docker compose push api
+          docker tag "${IMAGE_PREFIX}/customer-api:${IMAGE_TAG}" "${IMAGE_PREFIX}/customer-api:latest"
+          docker push "${IMAGE_PREFIX}/customer-api:latest"
 
       - name: Connect kubectl to AKS
         run: |

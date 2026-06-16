@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,25 @@ from pydantic import BaseModel, Field
 from sqlalchemy import JSON, Column, DateTime, Integer, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from api.model_artifacts import MODEL_FILES
 
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./predictions.db")
 DAMAGE_THRESHOLD = float(os.getenv("DAMAGE_THRESHOLD", "0.5"))
+
+
+def database_url() -> str:
+    if explicit_url := os.getenv("DATABASE_URL"):
+        return explicit_url
+
+    user = os.getenv("POSTGRES_USER")
+    password = os.getenv("POSTGRES_PASSWORD")
+    database = os.getenv("POSTGRES_DB")
+    host = os.getenv("POSTGRES_HOST", "postgres")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    if all([user, password, database]):
+        return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
+
+    return "sqlite:///./predictions.db"
 
 
 class Base(DeclarativeBase):
@@ -49,7 +65,7 @@ class PredictionResponse(BaseModel):
 
 class ModelBundle:
     def __init__(self, model_dir: Path):
-        metadata_path = model_dir / "model_metadata.json"
+        metadata_path = model_dir / MODEL_FILES["metadata"]
         if not metadata_path.exists():
             raise FileNotFoundError(
                 f"Missing {metadata_path}. Run training/train.py before starting the API."
@@ -58,13 +74,17 @@ class ModelBundle:
         self.metadata = json.loads(metadata_path.read_text())
         self.feature_columns = self.metadata["feature_columns"]
         self.feature_defaults = self.metadata["feature_defaults"]
-        self.profit_model = joblib.load(model_dir / "profit_model.joblib")
+        self.profit_model = joblib.load(model_dir / MODEL_FILES["profit"])
         self.damage_incidence_model = joblib.load(
-            model_dir / "damage_incidence_model.joblib"
+            model_dir / MODEL_FILES["damage_incidence"]
         )
-        self.damage_amount_model = joblib.load(model_dir / "damage_amount_model.joblib")
+        self.damage_amount_model = joblib.load(
+            model_dir / MODEL_FILES["damage_amount"]
+        )
 
-    def frame_from_payload(self, payload: dict[str, Any]) -> tuple[pd.DataFrame, list[str]]:
+    def frame_from_payload(
+        self, payload: dict[str, Any]
+    ) -> tuple[pd.DataFrame, list[str]]:
         unknown = sorted(set(payload) - set(self.feature_columns))
         if unknown:
             raise HTTPException(
@@ -92,7 +112,9 @@ class ModelBundle:
         )
         predicted_damage_incident = damage_probability >= DAMAGE_THRESHOLD
         if predicted_damage_incident:
-            amount_if_damage = float(np.expm1(self.damage_amount_model.predict(frame)[0]))
+            amount_if_damage = float(
+                np.expm1(self.damage_amount_model.predict(frame)[0])
+            )
             amount_if_damage = max(amount_if_damage, 0.0)
             expected_damage = damage_probability * amount_if_damage
         else:
@@ -111,34 +133,49 @@ class ModelBundle:
 
 
 def create_db_session() -> sessionmaker[Session]:
-    connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
+    url = database_url()
+    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)
 
 
-app = FastAPI(title="Customer Value Prediction API", version="1.0.0")
-SessionLocal = create_db_session()
-models: ModelBundle | None = None
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.models = ModelBundle(MODEL_DIR)
+    app.state.session_factory = create_db_session()
+    yield
 
 
-@app.on_event("startup")
-def load_models() -> None:
-    global models
-    models = ModelBundle(MODEL_DIR)
+app = FastAPI(
+    title="Customer Value Prediction API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+def model_bundle() -> ModelBundle:
+    if not hasattr(app.state, "models"):
+        raise HTTPException(status_code=503, detail="Models are not loaded yet.")
+    return app.state.models
+
+
+def session_factory() -> sessionmaker[Session]:
+    if not hasattr(app.state, "session_factory"):
+        raise HTTPException(status_code=503, detail="Database is not ready yet.")
+    return app.state.session_factory
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    with SessionLocal() as session:
+    with session_factory()() as session:
         session.execute(text("SELECT 1"))
     return {"status": "ok"}
 
 
 @app.get("/features")
 def features() -> dict[str, Any]:
-    if models is None:
-        raise HTTPException(status_code=503, detail="Models are not loaded yet.")
+    models = model_bundle()
     return {
         "features": models.feature_columns,
         "defaults": models.feature_defaults,
@@ -148,11 +185,8 @@ def features() -> dict[str, Any]:
 
 @app.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
-    if models is None:
-        raise HTTPException(status_code=503, detail="Models are not loaded yet.")
-
-    response = models.predict(request.features)
-    with SessionLocal() as session:
+    response = model_bundle().predict(request.features)
+    with session_factory()() as session:
         session.add(
             PredictionLog(
                 created_at=datetime.now(timezone.utc),

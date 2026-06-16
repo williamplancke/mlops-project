@@ -12,10 +12,12 @@ services:
       retries: 10
 
   api:
+    image: ${IMAGE_PREFIX:-customer-ml}/customer-api:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: api/Dockerfile
     env_file:
+      - env/postgres.env
       - env/api.env
     depends_on:
       postgres:
@@ -30,7 +32,7 @@ services:
       test:
         [
           "CMD",
-          "python",
+          "/opt/venv/bin/python",
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
         ]
@@ -39,6 +41,7 @@ services:
       retries: 10
 
   frontend:
+    image: ${IMAGE_PREFIX:-customer-ml}/customer-frontend:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: frontend/Dockerfile
@@ -50,6 +53,7 @@ services:
           - customer-frontend
 
   nginx:
+    image: ${IMAGE_PREFIX:-customer-ml}/customer-nginx:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: nginx/Dockerfile

@@ -28,11 +28,9 @@ spec:
           env:
             - name: MODEL_DIR
               value: /app/models
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: DATABASE_URL
+          envFrom:
+            - secretRef:
+                name: postgres-secret
           readinessProbe:
             httpGet:
               path: /health

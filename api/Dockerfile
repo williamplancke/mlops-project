@@ -1,7 +1,7 @@
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
-COPY api/requirements.txt /app/requirements.txt
+COPY requirements.txt /app/requirements.txt
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
     && /opt/venv/bin/pip install --no-cache-dir -r /app/requirements.txt

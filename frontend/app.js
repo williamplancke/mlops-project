@@ -4,6 +4,14 @@ const statusEl = document.querySelector("#apiStatus");
 const formError = document.querySelector("#formError");
 const advancedJson = document.querySelector("#advancedJson");
 const loadDefaults = document.querySelector("#loadDefaults");
+const resultElements = {
+  netProfit: document.querySelector("#netProfit"),
+  profit: document.querySelector("#profit"),
+  damageProbability: document.querySelector("#damageProbability"),
+  expectedDamage: document.querySelector("#expectedDamage"),
+  rawResponse: document.querySelector("#rawResponse"),
+  incidentBadge: document.querySelector("#incidentBadge"),
+};
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat("en-US", {
@@ -14,8 +22,19 @@ const formatCurrency = (value) =>
 
 const setStatus = (message, ok = true) => {
   statusEl.textContent = message;
-  statusEl.style.background = ok ? "#edf6f2" : "#fff0ec";
-  statusEl.style.color = ok ? "#155b45" : "#b2452d";
+  statusEl.classList.toggle("offline", !ok);
+};
+
+const errorMessage = (error) =>
+  error instanceof Error ? error.message : "Unexpected error.";
+
+const fetchJson = async (url, options) => {
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || "Request failed.");
+  }
+  return data;
 };
 
 const collectFeatures = () => {
@@ -35,25 +54,22 @@ const collectFeatures = () => {
 };
 
 const renderPrediction = (data) => {
-  document.querySelector("#netProfit").textContent = formatCurrency(data.expected_net_profit);
-  document.querySelector("#profit").textContent = formatCurrency(data.predicted_profit);
-  document.querySelector("#damageProbability").textContent = `${Math.round(data.damage_probability * 100)}%`;
-  document.querySelector("#expectedDamage").textContent = formatCurrency(data.expected_damage_amount);
-  document.querySelector("#rawResponse").textContent = JSON.stringify(data, null, 2);
+  resultElements.netProfit.textContent = formatCurrency(data.expected_net_profit);
+  resultElements.profit.textContent = formatCurrency(data.predicted_profit);
+  resultElements.damageProbability.textContent = `${Math.round(data.damage_probability * 100)}%`;
+  resultElements.expectedDamage.textContent = formatCurrency(data.expected_damage_amount);
+  resultElements.rawResponse.textContent = JSON.stringify(data, null, 2);
 
-  const badge = document.querySelector("#incidentBadge");
-  badge.className = data.predicted_damage_incident ? "incident risk" : "incident clear";
-  badge.textContent = data.predicted_damage_incident
+  resultElements.incidentBadge.className = data.predicted_damage_incident
+    ? "incident risk"
+    : "incident clear";
+  resultElements.incidentBadge.textContent = data.predicted_damage_incident
     ? "Damage incident likely"
     : "Damage incident unlikely";
 };
 
 const loadFeatureDefaults = async () => {
-  const response = await fetch(`${apiBase}/features`);
-  if (!response.ok) {
-    throw new Error("Could not load feature defaults.");
-  }
-  const data = await response.json();
+  const data = await fetchJson(`${apiBase}/features`);
   advancedJson.value = JSON.stringify(data.defaults, null, 2);
 };
 
@@ -62,20 +78,14 @@ form.addEventListener("submit", async (event) => {
   formError.textContent = "";
 
   try {
-    const response = await fetch(`${apiBase}/predict`, {
+    const data = await fetchJson(`${apiBase}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ features: collectFeatures() }),
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.detail || "Prediction failed.");
-    }
-
     renderPrediction(data);
   } catch (error) {
-    formError.textContent = error.message;
+    formError.textContent = errorMessage(error);
   }
 });
 
@@ -84,7 +94,7 @@ loadDefaults.addEventListener("click", async () => {
   try {
     await loadFeatureDefaults();
   } catch (error) {
-    formError.textContent = error.message;
+    formError.textContent = errorMessage(error);
   }
 });
 

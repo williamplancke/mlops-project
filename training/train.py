@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import joblib
@@ -15,8 +16,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-TARGETS = ["outcome_profit", "outcome_damage_inc", "outcome_damage_amount"]
+from api.model_artifacts import MODEL_FILES, TARGET_COLUMNS
+
 RANDOM_STATE = 304
 DEFAULT_QUICK_ROWS = 2000
 
@@ -36,11 +41,24 @@ def quick_sample(df: pd.DataFrame, max_rows: int) -> pd.DataFrame:
     return df.sample(n=max_rows, random_state=RANDOM_STATE).reset_index(drop=True)
 
 
+def split_features_target(
+    df: pd.DataFrame, target: str, drop_columns: list[str]
+) -> tuple[pd.DataFrame, pd.Series]:
+    data = df.drop(columns=drop_columns)
+    return data.drop(columns=[target]), data[target]
+
+
+def save_model(model, output_dir: Path, filename: str) -> None:
+    joblib.dump(model, output_dir / filename)
+
+
 def train_profit(df: pd.DataFrame, output_dir: Path, quick: bool) -> dict:
     print("Training profit model...", flush=True)
-    data = df.drop(columns=["outcome_damage_amount", "outcome_damage_inc"])
-    x = data.drop(columns=["outcome_profit"])
-    y = data["outcome_profit"]
+    x, y = split_features_target(
+        df,
+        target="outcome_profit",
+        drop_columns=["outcome_damage_amount", "outcome_damage_inc"],
+    )
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=0.2, random_state=RANDOM_STATE
     )
@@ -76,15 +94,17 @@ def train_profit(df: pd.DataFrame, output_dir: Path, quick: bool) -> dict:
     }
 
     model.fit(x, y)
-    joblib.dump(model, output_dir / "profit_model.joblib")
+    save_model(model, output_dir, MODEL_FILES["profit"])
     return metrics
 
 
 def train_damage_incidence(df: pd.DataFrame, output_dir: Path, quick: bool) -> dict:
     print("Training damage incidence model...", flush=True)
-    data = df.drop(columns=["outcome_damage_amount", "outcome_profit"])
-    x = data.drop(columns=["outcome_damage_inc"])
-    y = data["outcome_damage_inc"]
+    x, y = split_features_target(
+        df,
+        target="outcome_damage_inc",
+        drop_columns=["outcome_damage_amount", "outcome_profit"],
+    )
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=0.2, stratify=y, random_state=42
     )
@@ -128,16 +148,18 @@ def train_damage_incidence(df: pd.DataFrame, output_dir: Path, quick: bool) -> d
     }
 
     model.fit(x, y)
-    joblib.dump(model, output_dir / "damage_incidence_model.joblib")
+    save_model(model, output_dir, MODEL_FILES["damage_incidence"])
     return metrics
 
 
 def train_damage_amount(df: pd.DataFrame, output_dir: Path, quick: bool) -> dict:
     print("Training damage amount model...", flush=True)
     data = df[df["outcome_damage_inc"] != 0].copy()
-    data = data.drop(columns=["outcome_profit", "outcome_damage_inc"])
-    x = data.drop(columns=["outcome_damage_amount"])
-    y = data["outcome_damage_amount"]
+    x, y = split_features_target(
+        data,
+        target="outcome_damage_amount",
+        drop_columns=["outcome_profit", "outcome_damage_inc"],
+    )
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=0.2, random_state=1234
     )
@@ -173,20 +195,20 @@ def train_damage_amount(df: pd.DataFrame, output_dir: Path, quick: bool) -> dict
     }
 
     model.fit(x, np.log1p(y))
-    joblib.dump(model, output_dir / "damage_amount_model.joblib")
+    save_model(model, output_dir, MODEL_FILES["damage_amount"])
     return metrics
 
 
 def write_metadata(df: pd.DataFrame, output_dir: Path, metrics: dict) -> None:
-    feature_columns = [column for column in df.columns if column not in TARGETS]
+    feature_columns = [column for column in df.columns if column not in TARGET_COLUMNS]
     defaults = df[feature_columns].median(numeric_only=True).fillna(0).to_dict()
     metadata = {
-        "target_columns": TARGETS,
+        "target_columns": TARGET_COLUMNS,
         "feature_columns": feature_columns,
         "feature_defaults": defaults,
         "metrics": metrics,
     }
-    (output_dir / "model_metadata.json").write_text(json.dumps(metadata, indent=2))
+    (output_dir / MODEL_FILES["metadata"]).write_text(json.dumps(metadata, indent=2))
 
 
 def main() -> None:
@@ -206,7 +228,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     df = pd.read_csv(args.data)
 
-    missing_targets = [target for target in TARGETS if target not in df.columns]
+    missing_targets = [target for target in TARGET_COLUMNS if target not in df.columns]
     if missing_targets:
         raise ValueError(f"Missing required target columns: {missing_targets}")
 
