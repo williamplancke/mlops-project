@@ -24,15 +24,15 @@
               <input name="income_am" type="number" step="1" value="250" />
             </label>
             <label>
-              Current profit
+              Total profit
               <input name="profit_am" type="number" step="1" value="1800" />
             </label>
             <label>
-              Previous damage
+              Previous damage amount
               <input name="damage_am" type="number" step="1" value="0" />
             </label>
             <label>
-              Claims
+              Number of insurance claims
               <input name="claims_no" type="number" step="1" value="0" />
             </label>
             <label>
@@ -46,10 +46,6 @@
             <label>
               Tenure months
               <input name="tenure_mts" type="number" step="1" value="120" />
-            </label>
-            <label>
-              Client segment
-              <input name="client_segment" type="number" step="1" value="1" />
             </label>
           </div>
 
@@ -70,20 +66,16 @@
         <h2>Prediction</h2>
         <div class="result-grid">
           <article>
-            <span>Expected net profit</span>
-            <strong id="netProfit">-</strong>
-          </article>
-          <article>
             <span>Predicted profit</span>
             <strong id="profit">-</strong>
           </article>
           <article>
-            <span>Damage probability</span>
-            <strong id="damageProbability">-</strong>
-          </article>
-          <article>
             <span>Expected damage</span>
             <strong id="expectedDamage">-</strong>
+          </article>
+          <article id="gradeCard" class="grade-card grade-neutral">
+            <span>Ranking grade</span>
+            <strong id="scoreLetter">-</strong>
           </article>
         </div>
         <div id="incidentBadge" class="incident neutral">No prediction yet</div>

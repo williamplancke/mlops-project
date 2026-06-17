@@ -13,6 +13,7 @@ COPY --from=builder /opt/venv /opt/venv
 
 COPY api /app/api
 COPY models /app/models
+COPY score_cleaned.csv /app/score_cleaned.csv
 
 EXPOSE 8000
 CMD ["/opt/venv/bin/uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -11,6 +11,7 @@ on:
       - "nginx/**"
       - "k8s/**"
       - "requirements.txt"
+      - "score_cleaned.csv"
       - ".github/workflows/deploy-application.yml"
   workflow_dispatch:
 

@@ -4,11 +4,12 @@ const statusEl = document.querySelector("#apiStatus");
 const formError = document.querySelector("#formError");
 const advancedJson = document.querySelector("#advancedJson");
 const loadDefaults = document.querySelector("#loadDefaults");
+const hiddenFeatures = new Set(["client_segment"]);
 const resultElements = {
-  netProfit: document.querySelector("#netProfit"),
   profit: document.querySelector("#profit"),
-  damageProbability: document.querySelector("#damageProbability"),
   expectedDamage: document.querySelector("#expectedDamage"),
+  gradeCard: document.querySelector("#gradeCard"),
+  scoreLetter: document.querySelector("#scoreLetter"),
   rawResponse: document.querySelector("#rawResponse"),
   incidentBadge: document.querySelector("#incidentBadge"),
 };
@@ -49,15 +50,18 @@ const collectFeatures = () => {
   if (advanced) {
     Object.assign(features, JSON.parse(advanced));
   }
+  hiddenFeatures.forEach((feature) => delete features[feature]);
 
   return features;
 };
 
 const renderPrediction = (data) => {
-  resultElements.netProfit.textContent = formatCurrency(data.expected_net_profit);
   resultElements.profit.textContent = formatCurrency(data.predicted_profit);
-  resultElements.damageProbability.textContent = `${Math.round(data.damage_probability * 100)}%`;
   resultElements.expectedDamage.textContent = formatCurrency(data.expected_damage_amount);
+  resultElements.scoreLetter.textContent = `${data.score_letter} (${data.score_percentile}%)`;
+  resultElements.gradeCard.className = `grade-card grade-${data.score_letter
+    .toLowerCase()
+    .replace("+", "plus")}`;
   resultElements.rawResponse.textContent = JSON.stringify(data, null, 2);
 
   resultElements.incidentBadge.className = data.predicted_damage_incident
@@ -70,6 +74,7 @@ const renderPrediction = (data) => {
 
 const loadFeatureDefaults = async () => {
   const data = await fetchJson(`${apiBase}/features`);
+  hiddenFeatures.forEach((feature) => delete data.defaults[feature]);
   advancedJson.value = JSON.stringify(data.defaults, null, 2);
 };
 

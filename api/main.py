@@ -16,7 +16,18 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from api.model_artifacts import MODEL_FILES
 
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
+SCORE_DATA_PATH = Path(os.getenv("SCORE_DATA_PATH", "score_cleaned.csv"))
 DAMAGE_THRESHOLD = float(os.getenv("DAMAGE_THRESHOLD", "0.5"))
+DAMAGE_COST_MULTIPLIER = float(os.getenv("DAMAGE_COST_MULTIPLIER", "1.2"))
+GRADE_BANDS = [
+    (95, "A+"),
+    (90, "A"),
+    (75, "B"),
+    (60, "C"),
+    (40, "D"),
+    (20, "E"),
+    (0, "F"),
+]
 
 
 def database_url() -> str:
@@ -60,11 +71,14 @@ class PredictionResponse(BaseModel):
     predicted_damage_amount_if_damage: float
     expected_damage_amount: float
     expected_net_profit: float
+    customer_score: float
+    score_percentile: float
+    score_letter: str
     missing_features_filled: list[str]
 
 
 class ModelBundle:
-    def __init__(self, model_dir: Path):
+    def __init__(self, model_dir: Path, score_data_path: Path):
         metadata_path = model_dir / MODEL_FILES["metadata"]
         if not metadata_path.exists():
             raise FileNotFoundError(
@@ -81,6 +95,7 @@ class ModelBundle:
         self.damage_amount_model = joblib.load(
             model_dir / MODEL_FILES["damage_amount"]
         )
+        self.reference_scores = load_reference_scores(score_data_path)
 
     def frame_from_payload(
         self, payload: dict[str, Any]
@@ -121,6 +136,9 @@ class ModelBundle:
             amount_if_damage = 0.0
             expected_damage = 0.0
 
+        customer_score = profit - (DAMAGE_COST_MULTIPLIER * expected_damage)
+        score_percentile = percentile_rank(customer_score, self.reference_scores)
+
         return PredictionResponse(
             predicted_profit=round(profit, 2),
             damage_probability=round(damage_probability, 4),
@@ -128,8 +146,43 @@ class ModelBundle:
             predicted_damage_amount_if_damage=round(amount_if_damage, 2),
             expected_damage_amount=round(expected_damage, 2),
             expected_net_profit=round(profit - expected_damage, 2),
+            customer_score=round(customer_score, 2),
+            score_percentile=round(score_percentile, 1),
+            score_letter=score_letter(score_percentile),
             missing_features_filled=missing,
         )
+
+
+def load_reference_scores(score_data_path: Path) -> pd.Series:
+    if not score_data_path.exists():
+        raise FileNotFoundError(
+            f"Missing {score_data_path}. Add score_cleaned.csv before starting the API."
+        )
+
+    scores = pd.read_csv(score_data_path)
+    required_columns = {"outcome_profit", "outcome_damage_amount"}
+    missing_columns = required_columns - set(scores.columns)
+    if missing_columns:
+        raise ValueError(
+            f"Missing required ranking columns in {score_data_path}: {sorted(missing_columns)}"
+        )
+
+    return (
+        scores["outcome_profit"] - (DAMAGE_COST_MULTIPLIER * scores["outcome_damage_amount"])
+    ).dropna()
+
+
+def percentile_rank(score: float, reference_scores: pd.Series) -> float:
+    if reference_scores.empty:
+        return 0.0
+    return float((reference_scores <= score).mean() * 100)
+
+
+def score_letter(percentile: float) -> str:
+    for threshold, letter in GRADE_BANDS:
+        if percentile >= threshold:
+            return letter
+    return "F"
 
 
 def create_db_session() -> sessionmaker[Session]:
@@ -142,7 +195,7 @@ def create_db_session() -> sessionmaker[Session]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.models = ModelBundle(MODEL_DIR)
+    app.state.models = ModelBundle(MODEL_DIR, SCORE_DATA_PATH)
     app.state.session_factory = create_db_session()
     yield
 

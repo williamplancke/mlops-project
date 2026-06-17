@@ -206,6 +206,51 @@ article strong {
   line-height: 1;
 }
 
+.grade-card {
+  border-color: transparent;
+  color: white;
+}
+
+.grade-card span {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.grade-card strong {
+  font-size: 2.2rem;
+}
+
+.grade-neutral {
+  background: #64706c;
+}
+
+.grade-aplus {
+  background: #064e3b;
+}
+
+.grade-a {
+  background: #087443;
+}
+
+.grade-b {
+  background: #2f8f46;
+}
+
+.grade-c {
+  background: #c7a11a;
+}
+
+.grade-d {
+  background: #d06f1f;
+}
+
+.grade-e {
+  background: #bd4b2f;
+}
+
+.grade-f {
+  background: #8f1f2f;
+}
+
 .incident {
   margin: 16px 0;
   padding: 12px 14px;
