@@ -1,4 +1,4 @@
-name: Build and deploy application services
+name: 3 - Deploy application services
 
 on:
   push:
@@ -19,6 +19,10 @@ permissions:
   contents: read
   id-token: write
   packages: write
+
+concurrency:
+  group: customer-ml-aks-deployment
+  cancel-in-progress: false
 
 env:
   AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}

@@ -49,22 +49,31 @@ Before applying outside CI, replace `ghcr.io/OWNER/REPO` in `k8s/*.yml` with you
 
 ## Task 3: CI/CD
 
-Two GitHub Actions workflows automate the required lifecycle:
+Three GitHub Actions workflows implement the required lifecycle:
 
-- `.github/workflows/train-and-deploy-model.yml`
-  - Triggers when training code or the dataset changes.
-  - Creates/configures Azure ML resources.
-  - Runs training in Azure ML.
-  - Downloads and registers the model artifacts.
-  - Builds a new API image containing the trained models.
-  - Performs a Kubernetes rolling update of the API.
-  - Scales the Azure ML compute cluster back to zero.
+- Task 3.1: `.github/workflows/retrain-model.yml`
+  - Triggers when training code, shared model metadata, or the training dataset changes.
+  - Creates the Azure ML workspace and autoscaling CPU compute when missing.
+  - Submits and monitors the Azure ML training job.
+  - Validates and registers the resulting model in Azure ML.
+  - Scales the Azure ML compute cluster back to zero even when a prior step fails.
 
-- `.github/workflows/deploy-application.yml`
-  - Triggers when API, frontend, NGINX, or Kubernetes configuration changes.
-  - Rebuilds container images.
-  - Applies Kubernetes manifests.
+- Task 3.2: `.github/workflows/deploy-model.yml`
+  - Triggers automatically after the retraining workflow completes successfully.
+  - Downloads the latest registered Azure ML model.
+  - Builds and publishes a new API image containing that model.
+  - Updates only the API deployment using Kubernetes `RollingUpdate`.
+  - Waits for the rollout to become healthy.
+
+- Task 3.3: `.github/workflows/deploy-application.yml`
+  - Triggers when API, frontend, NGINX, Compose, dataset-ranking, or Kubernetes configuration changes.
+  - Restores the latest registered model for the API image.
+  - Rebuilds and publishes all application images.
+  - Applies the Kubernetes manifests.
   - Performs rolling updates for API, frontend, and NGINX.
+
+The two deployment workflows share a concurrency group, preventing simultaneous
+updates to the AKS cluster.
 
 Required GitHub secrets:
 

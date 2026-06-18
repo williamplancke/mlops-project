@@ -1,0 +1,108 @@
+name: 1 - Retrain models in Azure ML
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "training/**"
+      - "api/model_artifacts.py"
+      - "train_V2_cleaned.csv"
+      - ".github/workflows/retrain-model.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_WORKSPACE: ${{ secrets.AZURE_WORKSPACE }}
+  AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout training source
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure Azure ML resources
+        run: |
+          az extension add --name ml --upgrade
+          az group show --name "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1 || \
+            az group create --name "$AZURE_RESOURCE_GROUP" --location "$AZURE_LOCATION"
+          az ml workspace show \
+            --name "$AZURE_WORKSPACE" \
+            --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1 || \
+            az ml workspace create \
+              --name "$AZURE_WORKSPACE" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --location "$AZURE_LOCATION"
+          az ml compute show \
+            --name cpu-cluster \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE" >/dev/null 2>&1 || \
+            az ml compute create \
+              --name cpu-cluster \
+              --type amlcompute \
+              --min-instances 0 \
+              --max-instances 1 \
+              --size Standard_DS3_v2 \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --workspace-name "$AZURE_WORKSPACE"
+
+      - name: Submit and monitor Azure ML training
+        id: training
+        run: |
+          JOB_NAME=$(az ml job create \
+            --file training/azure_job.yml \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE" \
+            --query name -o tsv)
+          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+          az ml job stream \
+            --name "$JOB_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE"
+          az ml job download \
+            --name "$JOB_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE" \
+            --download-path azureml-artifacts \
+            --all
+
+      - name: Validate trained model artifacts
+        run: |
+          rm -rf models
+          mkdir -p models
+          find azureml-artifacts -name "*.joblib" -exec cp {} models/ \;
+          find azureml-artifacts -name "model_metadata.json" -exec cp {} models/ \;
+          test -f models/profit_model.joblib
+          test -f models/damage_incidence_model.joblib
+          test -f models/damage_amount_model.joblib
+          test -f models/model_metadata.json
+
+      - name: Register trained model in Azure ML
+        run: |
+          az ml model create \
+            --name customer-value-model \
+            --type custom_model \
+            --path models \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE"
+
+      - name: Scale training compute to zero
+        if: always()
+        run: |
+          az ml compute update \
+            --name cpu-cluster \
+            --min-instances 0 \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE" || true

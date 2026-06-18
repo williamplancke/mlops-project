@@ -1,0 +1,119 @@
+name: 2 - Deploy trained model
+
+on:
+  workflow_run:
+    workflows: ["1 - Retrain models in Azure ML"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+concurrency:
+  group: customer-ml-aks-deployment
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_WORKSPACE: ${{ secrets.AZURE_WORKSPACE }}
+  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+
+jobs:
+  deploy-model:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trained revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download latest registered model
+        run: |
+          az extension add --name ml --upgrade
+          MODEL_VERSION=$(az ml model list \
+            --name customer-value-model \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE" \
+            --query "max_by([], &to_number(version)).version" -o tsv)
+          if [ -z "$MODEL_VERSION" ]; then
+            echo "No registered customer-value-model was found."
+            exit 1
+          fi
+          rm -rf models downloaded-model
+          mkdir -p models
+          az ml model download \
+            --name customer-value-model \
+            --version "$MODEL_VERSION" \
+            --download-path downloaded-model \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --workspace-name "$AZURE_WORKSPACE"
+          find downloaded-model -name "*.joblib" -exec cp {} models/ \;
+          find downloaded-model -name "model_metadata.json" -exec cp {} models/ \;
+          test -f models/profit_model.joblib
+          test -f models/damage_incidence_model.joblib
+          test -f models/damage_amount_model.joblib
+          test -f models/model_metadata.json
+
+      - name: Configure image names
+        run: |
+          SOURCE_SHA="${{ github.event.workflow_run.head_sha }}"
+          if [ -z "$SOURCE_SHA" ]; then SOURCE_SHA="$GITHUB_SHA"; fi
+          echo "IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=$SOURCE_SHA" >> "$GITHUB_ENV"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        run: |
+          docker compose build api
+          docker compose push api
+          docker tag "${IMAGE_PREFIX}/customer-api:${IMAGE_TAG}" "${IMAGE_PREFIX}/customer-api:latest"
+          docker push "${IMAGE_PREFIX}/customer-api:latest"
+
+      - name: Connect kubectl to AKS
+        run: |
+          az aks get-credentials \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --overwrite-existing
+
+      - name: Configure GHCR image pull credentials
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PAT || github.token }}
+        run: |
+          kubectl create namespace customer-ml --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n customer-ml create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username="$GHCR_USERNAME" \
+            --docker-password="$GHCR_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy API with rolling update
+        run: |
+          sed -i "s#ghcr.io/OWNER/REPO#${IMAGE_PREFIX}#g" k8s/api.yml
+          kubectl apply -f k8s/namespace.yml
+          kubectl apply -f k8s/postgres.yml
+          kubectl apply -f k8s/api.yml
+          kubectl -n customer-ml set image \
+            deployment/customer-api \
+            api="${IMAGE_PREFIX}/customer-api:${IMAGE_TAG}"
+          kubectl -n customer-ml rollout status \
+            deployment/customer-api \
+            --timeout=300s
