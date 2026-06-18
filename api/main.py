@@ -19,6 +19,7 @@ MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
 SCORE_DATA_PATH = Path(os.getenv("SCORE_DATA_PATH", "score_cleaned.csv"))
 DAMAGE_THRESHOLD = float(os.getenv("DAMAGE_THRESHOLD", "0.5"))
 DAMAGE_COST_MULTIPLIER = float(os.getenv("DAMAGE_COST_MULTIPLIER", "1.2"))
+ROOT_PATH = os.getenv("ROOT_PATH", "")
 GRADE_BANDS = [
     (95, "A+"),
     (90, "A"),
@@ -203,6 +204,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Customer Value Prediction API",
     version="1.0.0",
+    root_path=ROOT_PATH,
     lifespan=lifespan,
 )
 

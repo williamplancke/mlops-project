@@ -32,6 +32,8 @@ spec:
               value: /app/models
             - name: SCORE_DATA_PATH
               value: /app/score_cleaned.csv
+            - name: ROOT_PATH
+              value: /api
           envFrom:
             - secretRef:
                 name: postgres-secret

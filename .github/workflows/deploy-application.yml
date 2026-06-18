@@ -82,9 +82,33 @@ jobs:
             docker push "${IMAGE_PREFIX}/customer-${service}:latest"
           done
 
-      - name: Connect kubectl to AKS
+      - name: Start AKS and connect kubectl
         run: |
-          az aks get-credentials --resource-group "$AZURE_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --overwrite-existing
+          POWER_STATE=$(az aks show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --query powerState.code -o tsv)
+          if [ "$POWER_STATE" != "Running" ]; then
+            echo "AKS is $POWER_STATE. Starting the cluster..."
+            az aks start \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AKS_CLUSTER_NAME"
+          fi
+          az aks get-credentials \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --overwrite-existing
+          for attempt in {1..30}; do
+            if kubectl get --raw=/readyz >/dev/null 2>&1; then
+              echo "Kubernetes API is ready."
+              exit 0
+            fi
+            echo "Waiting for Kubernetes API ($attempt/30)..."
+            sleep 10
+          done
+          echo "Kubernetes API did not become ready in time."
+          kubectl cluster-info
+          exit 1
 
       - name: Configure cluster image pull secret
         env:

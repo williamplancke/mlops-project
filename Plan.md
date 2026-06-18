@@ -1,3 +1,11 @@
+# Commands 
+Start: docker run --rm -v azure-cli-config:/root/.azure mcr.microsoft.com/azure-cli az aks start --resource-group azure-ai --name mlops-project-aks
+Status: docker run --rm -v azure-cli-config:/root/.azure mcr.microsoft.com/azure-cli az aks show --resource-group azure-ai --name mlops-project-aks --query powerState
+Stop: docker run --rm -v azure-cli-config:/root/.azure mcr.microsoft.com/azure-cli az aks stop --resource-group azure-ai --name mlops-project-aks
+Delete: docker run --rm -v azure-cli-config:/root/.azure mcr.microsoft.com/azure-cli az aks delete --resource-group azure-ai --name mlops-project-aks --yes
+
+
+
 # MLOps Deployment Plan
 
 This project deploys three customer models trained from `train_V2_cleaned.csv`:
